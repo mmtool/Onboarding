@@ -713,6 +713,22 @@
         return str.replace(/[&<>]/g, m => m === '&' ? '&amp;' : (m === '<' ? '&lt;' : '&gt;'));
     }
 
+function handleFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+
+  reader.onload = function () {
+    const base64 = reader.result.split(',')[1];
+
+    document.querySelector(`[name="${input.name}_base64"]`).value = base64;
+    document.querySelector(`[name="${input.name}_name"]`).value = file.name;
+  };
+
+  reader.readAsDataURL(file);
+}
+
     // Navigation listeners
     document.getElementById('nextStep1').addEventListener('click', () => { if (validateStep(1)) goToStep(2); });
     document.getElementById('prevStep2').addEventListener('click', () => goToStep(1));
