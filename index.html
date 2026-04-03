@@ -166,8 +166,7 @@
         <div class="step-badge">3. Documents & preview</div>
     </div>
 
-    <!-- Replace YOUR_GOOGLE_APPS_SCRIPT_URL with your deployed web app URL -->
-    <form id="multiStepForm" action="https://script.google.com/macros/s/AKfycbxTDttzMrAKdTrk5xuaiL6CEVYt-Iq0ueo5Cs3BW4HaeUyZJHH0pMCQYhw4Y5mcCsfx/exec" method="POST" enctype="multipart/form-data">
+    <form id="multiStepForm" action="https://script.google.com/macros/s/AKfycbwzmkZdi9nDWOdNylJ-rsp1ZDoOeF72OVPwoWWw0jupHsqHO6ZmdinlMPY4bhYhKo51/exec" method="POST">
         <!-- STEP 1: OWNER INFO -->
         <div class="step active-step" id="step1">
             <div class="section">
@@ -295,17 +294,48 @@
         <div class="step" id="step3">
             <div class="section">
                 <div class="section-title">Supporting documents</div>
+                <!-- For each file, we add file input + hidden base64 + hidden name -->
                 <div class="form-row">
-                    <div class="form-group"><label>Business registration</label><input type="file" name="docBusiness" accept=".pdf,.jpg,.png"></div>
-                    <div class="form-group"><label>Agreement / contract</label><input type="file" name="docAgreement" accept=".pdf,.jpg"></div>
+                    <div class="form-group">
+                        <label>Business registration</label>
+                        <input type="file" name="docBusiness" accept=".pdf,.jpg,.png" onchange="handleFile(this)">
+                        <input type="hidden" name="docBusiness_base64">
+                        <input type="hidden" name="docBusiness_name">
+                    </div>
+                    <div class="form-group">
+                        <label>Agreement / contract</label>
+                        <input type="file" name="docAgreement" accept=".pdf,.jpg" onchange="handleFile(this)">
+                        <input type="hidden" name="docAgreement_base64">
+                        <input type="hidden" name="docAgreement_name">
+                    </div>
                 </div>
                 <div class="form-row">
-                    <div class="form-group"><label>BOD list</label><input type="file" name="docBod" accept=".pdf,.jpg"></div>
-                    <div class="form-group"><label>Shop photo</label><input type="file" name="docShop" accept="image/*"></div>
+                    <div class="form-group">
+                        <label>BOD list</label>
+                        <input type="file" name="docBod" accept=".pdf,.jpg" onchange="handleFile(this)">
+                        <input type="hidden" name="docBod_base64">
+                        <input type="hidden" name="docBod_name">
+                    </div>
+                    <div class="form-group">
+                        <label>Shop photo</label>
+                        <input type="file" name="docShop" accept="image/*" onchange="handleFile(this)">
+                        <input type="hidden" name="docShop_base64">
+                        <input type="hidden" name="docShop_name">
+                    </div>
                 </div>
                 <div class="form-row">
-                    <div class="form-group"><label>NRC front</label><input type="file" name="nrcFront"></div>
-                    <div class="form-group"><label>NRC back</label><input type="file" name="nrcBack"></div>
+                    <div class="form-group">
+                        <label>NRC front</label>
+                        <input type="file" name="nrcFront" onchange="handleFile(this)">
+                        <input type="hidden" name="nrcFront_base64">
+                        <input type="hidden" name="nrcFront_name">
+                    </div>
+                    <div class="form-group">
+                        <label>NRC back</label>
+                        <input type="file" name="nrcBack" onchange="handleFile(this)">
+                        <input type="hidden" name="nrcBack_base64">
+                        <input type="hidden" name="nrcBack_name">
+                    </div>
                 </div>
             </div>
 
@@ -324,465 +354,16 @@
 </div>
 
 <script>
-    // ---------- GLOBAL DATA ----------
-    let nrcRaw = [];
-    let addressList = [];
-    let mccList = [];
-    let currentStep = 1;
-    let isSyncing = false;
-
-    async function fetchJSON(url) {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-    }
-
-    function collectAllData() {
-        const data = {};
-        const inputs = document.querySelectorAll('#multiStepForm input, #multiStepForm select');
-        inputs.forEach(el => {
-            let key = el.id || el.name;
-            if (!key) return;
-            if (el.type === 'file') {
-                data[key] = el.files.length ? el.files[0].name : null;
-            } else if (el.type === 'checkbox') {
-                data[key] = el.checked;
-            } else {
-                data[key] = el.value;
-            }
-        });
-        data['gender'] = document.getElementById('genderField')?.value || '';
-        data['contactNumber'] = document.getElementById('contactNumber')?.value || '';
-        data['ownerFullAddress'] = document.getElementById('ownerFullAddress')?.value || '';
-        data['busFullAddress'] = document.getElementById('busFullAddress')?.value || '';
-        data['nrcFormatted'] = `${document.getElementById('nrcPrefix').value}/${document.getElementById('nrcTsp').value}(${document.getElementById('nrcType').value})${document.getElementById('nrcNumber').value}`;
-        return data;
-    }
-
-    function updateOwnerFullAddress() {
-        const parts = [
-            document.getElementById('ownerHouseEn').value,
-            document.getElementById('ownerStreetEn').value,
-            document.getElementById('ownerTownship').options[document.getElementById('ownerTownship').selectedIndex]?.text || '',
-            document.getElementById('ownerCityEn').value,
-            document.getElementById('ownerPostal').value,
-            document.getElementById('ownerRegion').options[document.getElementById('ownerRegion').selectedIndex]?.text || '',
-            'Myanmar'
-        ].filter(v => v && v.trim());
-        document.getElementById('ownerFullAddress').value = parts.join(', ');
-    }
-
-    function updateBusinessFullAddress() {
-        const parts = [
-            document.getElementById('busHouseEn').value,
-            document.getElementById('busStreetEn').value,
-            document.getElementById('busTownship').options[document.getElementById('busTownship').selectedIndex]?.text || '',
-            document.getElementById('busCityEn').value,
-            document.getElementById('busPostal').value,
-            document.getElementById('busRegion').options[document.getElementById('busRegion').selectedIndex]?.text || '',
-            'Myanmar'
-        ].filter(v => v && v.trim());
-        document.getElementById('busFullAddress').value = parts.join(', ');
-    }
-
-    // Autofill helpers
-    function setupGenderAutofill() {
-        const titleEn = document.getElementById('titleEn');
-        const genderField = document.getElementById('genderField');
-        titleEn.addEventListener('change', () => {
-            genderField.value = titleEn.value === 'U' ? 'Male' : (titleEn.value === 'Daw' ? 'Female' : '');
-        });
-        genderField.value = titleEn.value === 'U' ? 'Male' : (titleEn.value === 'Daw' ? 'Female' : '');
-    }
-
-    function setupCompanyAutofill() {
-        const labelEn = document.getElementById('merchantLabelEn');
-        const labelMm = document.getElementById('merchantLabelMm');
-        const companyEn = document.getElementById('companyNameEn');
-        const companyMm = document.getElementById('companyNameMm');
-        const shortEn = document.getElementById('shortNameEn');
-        const shortMm = document.getElementById('shortNameMm');
-        const businessName = document.getElementById('businessName');
-        function update() {
-            companyEn.value = labelEn.value;
-            companyMm.value = labelMm.value;
-            shortEn.value = labelEn.value;
-            shortMm.value = labelMm.value;
-            businessName.value = labelEn.value;
-        }
-        labelEn.addEventListener('input', update);
-        labelMm.addEventListener('input', update);
-        update();
-    }
-
-    // NRC
-    function populateNrcPrefixes() {
-        const prefixSelect = document.getElementById('nrcPrefix');
-        prefixSelect.innerHTML = '<option value="">-- No. 1–14 --</option>';
-        for (let i = 1; i <= 14; i++) {
-            const opt = document.createElement('option');
-            opt.value = i;
-            opt.textContent = i;
-            prefixSelect.appendChild(opt);
-        }
-        prefixSelect.addEventListener('change', (e) => {
-            const selectedNo = parseInt(e.target.value);
-            const tspSelect = document.getElementById('nrcTsp');
-            tspSelect.innerHTML = '<option value="">-- Select township code --</option>';
-            if (!selectedNo) { tspSelect.disabled = true; return; }
-            const selectedItem = nrcRaw.find(item => item.No === selectedNo);
-            if (selectedItem?.township) {
-                selectedItem.township.forEach(tsp => {
-                    const opt = document.createElement('option');
-                    opt.value = tsp;
-                    opt.textContent = tsp.toUpperCase();
-                    tspSelect.appendChild(opt);
-                });
-                tspSelect.disabled = false;
-                if (selectedItem.township.length) tspSelect.value = selectedItem.township[0];
-            } else tspSelect.disabled = true;
-        });
-        setTimeout(() => { if (prefixSelect.options.length > 12) prefixSelect.value = "12"; prefixSelect.dispatchEvent(new Event('change')); }, 500);
-    }
-
-    function populateNrcTypes() {
-        const typeSet = new Set();
-        nrcRaw.forEach(item => { if (Array.isArray(item.type)) item.type.forEach(t => typeSet.add(t)); });
-        const typeSelect = document.getElementById('nrcType');
-        typeSelect.innerHTML = '<option value="">-- NRC type --</option>';
-        Array.from(typeSet).sort().forEach(t => {
-            const opt = document.createElement('option');
-            opt.value = t;
-            opt.textContent = t;
-            typeSelect.appendChild(opt);
-        });
-        setTimeout(() => { typeSelect.value = "C"; }, 500);
-    }
-
-    // Address system
-    function setupAddresses() {
-        const ownerRegion = document.getElementById('ownerRegion');
-        const ownerTownship = document.getElementById('ownerTownship');
-        const busRegion = document.getElementById('busRegion');
-        const busTownship = document.getElementById('busTownship');
-
-        const regionMap = new Map();
-        addressList.forEach(addr => { if (addr.Region) regionMap.set(addr.Region, addr.Region); });
-        const regions = Array.from(regionMap.keys()).sort();
-
-        const fillRegionSelect = (selectEl) => {
-            selectEl.innerHTML = '<option value="">-- Select region --</option>';
-            regions.forEach(r => {
-                const opt = document.createElement('option');
-                opt.value = r;
-                opt.textContent = r;
-                selectEl.appendChild(opt);
-            });
-        };
-        fillRegionSelect(ownerRegion);
-        fillRegionSelect(busRegion);
-
-        const getTownshipsForRegion = (region) => addressList.filter(a => a.Region === region);
-
-        ownerRegion.addEventListener('change', () => {
-            const region = ownerRegion.value;
-            ownerTownship.innerHTML = '<option value="">-- Select township --</option>';
-            if (!region) { ownerTownship.disabled = true; return; }
-            const towns = getTownshipsForRegion(region);
-            towns.forEach(t => {
-                const opt = document.createElement('option');
-                opt.value = t.Township;
-                opt.setAttribute('data-district', t.District || '');
-                opt.setAttribute('data-city-en', t["City EN"] || '');
-                opt.setAttribute('data-city-mm', t["City MM"] || '');
-                opt.setAttribute('data-postal', t["Postal Code"] || '');
-                opt.textContent = t.Township;
-                ownerTownship.appendChild(opt);
-            });
-            ownerTownship.disabled = false;
-            if (towns.length) ownerTownship.value = towns[0].Township;
-            ownerTownship.dispatchEvent(new Event('change'));
-        });
-
-        ownerTownship.addEventListener('change', (e) => {
-            const selected = e.target.selectedOptions[0];
-            document.getElementById('ownerDistrict').value = selected?.getAttribute('data-district') || '';
-            document.getElementById('ownerCityEn').value = selected?.getAttribute('data-city-en') || '';
-            document.getElementById('ownerCityMm').value = selected?.getAttribute('data-city-mm') || '';
-            document.getElementById('ownerPostal').value = selected?.getAttribute('data-postal') || '';
-            updateOwnerFullAddress();
-            if (document.getElementById('sameAsOwnerCheckbox').checked) syncBusinessFromOwner();
-        });
-
-        busRegion.addEventListener('change', () => {
-            const region = busRegion.value;
-            busTownship.innerHTML = '<option value="">-- Select township --</option>';
-            if (!region) { busTownship.disabled = true; return; }
-            const towns = getTownshipsForRegion(region);
-            towns.forEach(t => {
-                const opt = document.createElement('option');
-                opt.value = t.Township;
-                opt.setAttribute('data-district', t.District || '');
-                opt.setAttribute('data-city-en', t["City EN"] || '');
-                opt.setAttribute('data-city-mm', t["City MM"] || '');
-                opt.setAttribute('data-postal', t["Postal Code"] || '');
-                opt.textContent = t.Township;
-                busTownship.appendChild(opt);
-            });
-            busTownship.disabled = false;
-            if (towns.length && !document.getElementById('sameAsOwnerCheckbox').checked) {
-                busTownship.value = towns[0].Township;
-                busTownship.dispatchEvent(new Event('change'));
-            }
-        });
-
-        busTownship.addEventListener('change', (e) => {
-            const selected = e.target.selectedOptions[0];
-            document.getElementById('busDistrict').value = selected?.getAttribute('data-district') || '';
-            document.getElementById('busCityEn').value = selected?.getAttribute('data-city-en') || '';
-            document.getElementById('busCityMm').value = selected?.getAttribute('data-city-mm') || '';
-            document.getElementById('busPostal').value = selected?.getAttribute('data-postal') || '';
-            updateBusinessFullAddress();
-        });
-
-        const ownerHouseEn = document.getElementById('ownerHouseEn');
-        const ownerStreetEn = document.getElementById('ownerStreetEn');
-        const ownerHouseMm = document.getElementById('ownerHouseMm');
-        const ownerStreetMm = document.getElementById('ownerStreetMm');
-        [ownerHouseEn, ownerStreetEn, ownerHouseMm, ownerStreetMm].forEach(el => {
-            el.addEventListener('input', () => {
-                updateOwnerFullAddress();
-                if (document.getElementById('sameAsOwnerCheckbox').checked) syncBusinessFromOwner();
-            });
-        });
-
-        const busHouseEn = document.getElementById('busHouseEn');
-        const busStreetEn = document.getElementById('busStreetEn');
-        const busHouseMm = document.getElementById('busHouseMm');
-        const busStreetMm = document.getElementById('busStreetMm');
-        [busHouseEn, busStreetEn, busHouseMm, busStreetMm].forEach(el => {
-            el.addEventListener('input', updateBusinessFullAddress);
-        });
-
-        setTimeout(() => {
-            if (regions.length) {
-                ownerRegion.value = regions[0];
-                ownerRegion.dispatchEvent(new Event('change'));
-                busRegion.value = regions[0];
-                busRegion.dispatchEvent(new Event('change'));
-            }
-        }, 600);
-    }
-
-    function syncBusinessFromOwner() {
-        if (isSyncing) return;
-        isSyncing = true;
-        const ownerRegion = document.getElementById('ownerRegion');
-        const ownerTownship = document.getElementById('ownerTownship');
-        const busRegion = document.getElementById('busRegion');
-        const busTownship = document.getElementById('busTownship');
-
-        if (ownerRegion.value) {
-            busRegion.value = ownerRegion.value;
-            busRegion.dispatchEvent(new Event('change'));
-        }
-        setTimeout(() => {
-            if (ownerTownship.value && busTownship.options.length) {
-                busTownship.value = ownerTownship.value;
-                busTownship.dispatchEvent(new Event('change'));
-            }
-        }, 100);
-        document.getElementById('busHouseEn').value = document.getElementById('ownerHouseEn').value;
-        document.getElementById('busStreetEn').value = document.getElementById('ownerStreetEn').value;
-        document.getElementById('busHouseMm').value = document.getElementById('ownerHouseMm').value;
-        document.getElementById('busStreetMm').value = document.getElementById('ownerStreetMm').value;
-        updateBusinessFullAddress();
-        isSyncing = false;
-    }
-
-    function setupSameAddressFeature() {
-        const checkbox = document.getElementById('sameAsOwnerCheckbox');
-        const busFields = [
-            document.getElementById('busRegion'),
-            document.getElementById('busTownship'),
-            document.getElementById('busHouseEn'),
-            document.getElementById('busStreetEn'),
-            document.getElementById('busHouseMm'),
-            document.getElementById('busStreetMm')
-        ];
-        function setReadOnly(ro) {
-            busFields.forEach(f => f.readOnly = ro);
-            document.getElementById('busDistrict').readOnly = ro;
-            document.getElementById('busCityEn').readOnly = ro;
-            document.getElementById('busCityMm').readOnly = ro;
-            document.getElementById('busPostal').readOnly = ro;
-            // Visual hint
-            busFields.forEach(f => f.style.backgroundColor = ro ? '#f5f6f7' : 'white');
-        }
-        checkbox.addEventListener('change', () => {
-            if (checkbox.checked) {
-                syncBusinessFromOwner();
-                setReadOnly(true);
-            } else {
-                setReadOnly(false);
-            }
-        });
-        syncBusinessFromOwner();
-        setReadOnly(true);
-    }
-
-    function populateMCC() {
-        const mccSelect = document.getElementById('mccCode');
-        mccSelect.innerHTML = '<option value="">-- Select MCC --</option>';
-        mccList.forEach(m => {
-            const opt = document.createElement('option');
-            opt.value = m.mcc_code;
-            opt.textContent = `${m.mcc_code} - ${m.mcc_name.substring(0, 55)}`;
-            mccSelect.appendChild(opt);
-        });
-        setTimeout(() => { if (mccList.length) mccSelect.value = "5311"; }, 700);
-    }
-
-    // Step navigation
-    function validateStep(step) {
-        if (step === 1) {
-            const phone = document.getElementById('merchantPhone').value.trim();
-            const title = document.getElementById('titleEn').value;
-            const lastName = document.getElementById('lastNameEn').value.trim();
-            const dob = document.getElementById('dob').value;
-            const father = document.getElementById('fatherName').value.trim();
-            const nrcPrefix = document.getElementById('nrcPrefix').value;
-            const nrcTsp = document.getElementById('nrcTsp').value;
-            const nrcType = document.getElementById('nrcType').value;
-            const nrcNum = document.getElementById('nrcNumber').value;
-            const ownerRegion = document.getElementById('ownerRegion').value;
-            const ownerTownship = document.getElementById('ownerTownship').value;
-            if (!phone || !title || !lastName || !dob || !father) { alert("Please fill all required owner fields"); return false; }
-            if (!nrcPrefix || !nrcTsp || !nrcType || !/^\d{6}$/.test(nrcNum)) { alert("Complete NRC (prefix, township, type, 6-digit number)"); return false; }
-            if (!ownerRegion || !ownerTownship) { alert("Select owner region & township"); return false; }
-            return true;
-        } else if (step === 2) {
-            const labelEn = document.getElementById('merchantLabelEn').value.trim();
-            const labelMm = document.getElementById('merchantLabelMm').value.trim();
-            const mcc = document.getElementById('mccCode').value;
-            const dica = document.getElementById('businessReg').value.trim();
-            const busRegion = document.getElementById('busRegion').value;
-            const busTownship = document.getElementById('busTownship').value;
-            const lat = document.getElementById('latitude').value;
-            const lng = document.getElementById('longitude').value;
-            if (!labelEn || !labelMm || !mcc || !dica) { alert("Complete business details"); return false; }
-            if (!busRegion || !busTownship) { alert("Select business region & township"); return false; }
-            if (!lat || !lng) { alert("Latitude and Longitude required"); return false; }
-            return true;
-        }
-        return true;
-    }
-
-    function goToStep(step) {
-        document.querySelectorAll('.step').forEach((el, idx) => {
-            el.classList.toggle('active-step', idx + 1 === step);
-        });
-        document.querySelectorAll('.step-badge').forEach((badge, idx) => {
-            badge.classList.remove('active', 'completed');
-            if (idx + 1 === step) badge.classList.add('active');
-            else if (idx + 1 < step) badge.classList.add('completed');
-        });
-        currentStep = step;
-        if (step === 3) renderTablePreview();
-    }
-
-    function renderTablePreview() {
-        const data = collectAllData();
-        let html = '<div class="table-preview"><table>';
-        for (const [key, val] of Object.entries(data)) {
-            let displayVal = (val === null || val === undefined) ? '' : val;
-            if (typeof displayVal === 'object') displayVal = JSON.stringify(displayVal);
-            html += `<tr><th style="width:35%">${key}</th><td>${String(displayVal).substring(0, 200)}</td></tr>`;
-        }
-        html += '}</div>';
-        document.getElementById('previewContainer').innerHTML = html;
-    }
-
-    function renderJsonPreview() {
-        const data = collectAllData();
-        const jsonStr = JSON.stringify(data, null, 2);
-        document.getElementById('previewContainer').innerHTML = `<div class="json-preview"><pre style="margin:0;font-family:monospace;">${escapeHtml(jsonStr)}</pre></div>`;
-    }
-
-    function escapeHtml(str) {
-        return str.replace(/[&<>]/g, m => m === '&' ? '&amp;' : (m === '<' ? '&lt;' : '&gt;'));
-    }
-
-function handleFile(input) {
-  const file = input.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-
-  reader.onload = function () {
-    const base64 = reader.result.split(',')[1];
-
-    document.querySelector(`[name="${input.name}_base64"]`).value = base64;
-    document.querySelector(`[name="${input.name}_name"]`).value = file.name;
-  };
-
-  reader.readAsDataURL(file);
-}
-
-    // Navigation listeners
-    document.getElementById('nextStep1').addEventListener('click', () => { if (validateStep(1)) goToStep(2); });
-    document.getElementById('prevStep2').addEventListener('click', () => goToStep(1));
-    document.getElementById('nextStep2').addEventListener('click', () => { if (validateStep(2)) goToStep(3); });
-    document.getElementById('prevStep3').addEventListener('click', () => goToStep(2));
-    document.getElementById('viewTableBtn').addEventListener('click', renderTablePreview);
-    document.getElementById('viewJsonBtn').addEventListener('click', renderJsonPreview);
-
-    // Contact number sync
-    document.getElementById('merchantPhone').addEventListener('input', () => {
-        document.getElementById('contactNumber').value = document.getElementById('merchantPhone').value;
-    });
-    document.getElementById('contactNumber').value = document.getElementById('merchantPhone').value;
-
-    // Default Title MM
-    document.getElementById('titleMm').value = 'ဦး';
-
-    // Final submit: show loading and let the form submit naturally
-    document.getElementById('finalSubmit').addEventListener('click', (e) => {
-        e.preventDefault();
-        if (validateStep(3)) {
-            document.getElementById('finalSubmit').innerText = "Submitting...";
-            document.getElementById('finalSubmit').disabled = true;
-            document.getElementById('multiStepForm').submit();
-        }
-    });
-
-    // Load external data
-    async function init() {
-        try {
-            const [nrcRes, addrRes, mccRes] = await Promise.all([
-                fetchJSON('https://raw.githubusercontent.com/mmtool/address/main/nrc.json'),
-                fetchJSON('https://raw.githubusercontent.com/mmtool/address/main/address.json'),
-                fetchJSON('https://raw.githubusercontent.com/mmtool/address/main/mcc.json')
-            ]);
-            nrcRaw = nrcRes;
-            addressList = addrRes;
-            mccList = mccRes;
-            populateNrcPrefixes();
-            populateNrcTypes();
-            setupAddresses();
-            populateMCC();
-            setupGenderAutofill();
-            setupCompanyAutofill();
-            setupSameAddressFeature();
-            document.getElementById('maritalStatus').value = 'Single';
-            document.getElementById('titleEn').value = 'U';
-            document.getElementById('titleEn').dispatchEvent(new Event('change'));
-        } catch (err) {
-            console.error(err);
-            alert("Failed to load configuration. Please refresh.");
-        }
-    }
-    init();
-</script>
-</body>
-</html>
+    // ---------- Base64 File Handler ----------
+    function handleFile(input) {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const base64 = e.target.result.split(',')[1]; // remove data:...;base64,
+            const nameField = input.getAttribute('name');
+            // Find the hidden inputs
+            const hiddenBase64 = document.querySelector(`input[name="${nameField}_base64"]`);
+            const hiddenName = document.querySelector(`input[name="${nameField}_name"]`);
+            if (hiddenBase64) hiddenBase64.value = base64;
+    
